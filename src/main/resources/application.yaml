@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: sftp-test
+
+server:
+  port: 40033
+
+sftp:
+  host: eu-central-1.sftpcloud.io
+  port: 22
+  user: b46737afad574d159d97597f1bfc029b
+  password: cZ2pPovo68AUDpgaHlGPyA46aZ08HWNR
