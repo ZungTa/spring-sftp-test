@@ -2,10 +2,15 @@ package com.example.sftp_test;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import org.apache.sshd.sftp.client.SftpClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.integration.file.remote.session.CachingSessionFactory;
+import org.springframework.integration.file.remote.session.Session;
 import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
 import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
 import org.springframework.stereotype.Service;
@@ -30,41 +35,87 @@ public class SftpService {
 
 	private SftpRemoteFileTemplate template;
 
-	public void uploadFile(String filePath, String remoteDirectory) {
+	public void uploadFileOrDir(String filePathStr, String remoteDirectory) {
 		if (template == null) {
 			connect();
 		}
 
-		File file = new File(filePath);
-		if (!file.exists()) {
-			log.error("파일이 존재하지 않습니다: {}", filePath);
+		Path filePath = Paths.get(filePathStr);
+		if (!Files.exists(filePath)) {
+			log.error("파일 또는 디렉토리가 존재하지 않습니다: {}", filePathStr);
 			return;
 		}
 
 		try {
-			String remoteFilePath = Paths.get(remoteDirectory, file.getName()).toString().replace("\\", "/");
 			template.execute(session -> {
 				log.info("SFTP session connected: {}", session.isOpen());
 				try {
 					// 디렉토리 생성 (없을 경우) (여러 depth 폴더까지 전부 생성)
 					session.mkdir(remoteDirectory);
+					log.info("디렉토리 생성: {}", remoteDirectory);
 
-					// FileInputStream으로 파일 스트림 열기
-					try (FileInputStream fis = new FileInputStream(file)) {
-						// 파일 업로드
-						session.write(fis, remoteFilePath);
+					if (Files.isDirectory(filePath)) {
+						// 디렉토리 업로드
+						String remoteDirPath = Paths.get(remoteDirectory, filePath.getFileName().toString())
+							.toString()
+							.replace("\\", "/");
+						log.info("디렉토리 생성: {}", remoteDirPath);
+						session.mkdir(remoteDirPath);
+						uploadDirectoryContents(session, filePath.toFile(), remoteDirPath);
+						log.info("디렉토리 업로드 성공: {} -> {}", filePathStr, remoteDirPath);
+						return true;
 					}
 
+					// 파일 업로드
+					String remoteFilePath = Paths.get(remoteDirectory, filePath.getFileName().toString())
+						.toString()
+						.replace("\\", "/");
+					uploadSingleFile(session, filePath.toFile(), remoteFilePath);
 					log.info("파일 업로드 성공: {}", remoteFilePath);
 					return true;
 				} catch (Exception e) {
-					log.error("파일 업로드 실패: {}", e.getMessage(), e);
+					log.error("업로드 실패: {}", e.getMessage(), e);
 					throw new RuntimeException(e);
 				}
 			});
 
 		} catch (Exception e) {
 			log.error("SFTP 업로드 중 오류 발생: {}", e.getMessage(), e);
+		}
+	}
+
+	private void uploadDirectoryContents(
+		Session<SftpClient.DirEntry> session,
+		File localDir,
+		String remoteParentDir
+	) throws IOException {
+		File[] files = localDir.listFiles();
+		if (files == null) {
+			return;
+		}
+
+		for (File file : files) {
+			String remotePath = Paths.get(remoteParentDir, file.getName()).toString().replace("\\", "/");
+
+			if (file.isDirectory()) {
+				// 하위 디렉토리 생성
+				session.mkdir(remotePath);
+				log.info("디렉토리 업로드 중 - 하위 디렉토리 생성: {}", remotePath);
+				// 재귀적으로 하위 디렉토리 내용 업로드
+				uploadDirectoryContents(session, file, remotePath);
+				continue;
+			}
+
+			// 파일 업로드
+			uploadSingleFile(session, file, remotePath);
+			log.info("디렉토리 업로드 중 - 파일 업로드 성공: {}", remotePath);
+		}
+	}
+
+	private void uploadSingleFile(Session<SftpClient.DirEntry> session, File file, String remotePath) throws
+		IOException {
+		try (FileInputStream fis = new FileInputStream(file)) {
+			session.write(fis, remotePath);
 		}
 	}
 

@@ -15,8 +15,9 @@ public class SftpSampleService {
 	public void sftp() {
 		log.info("sftp sample");
 
-		String localFilePath = "C:\\Users\\user\\Documents\\dev\\temp\\asd.pdf";
-		String remoteDirectory = "/ntle/asset/";
-		sftpService.uploadFile(localFilePath, remoteDirectory);
+		// String localFilePath = "C:\\Users\\user\\Documents\\dev\\temp\\asd.pdf";
+		String localDirPath = "C:\\Users\\user\\Documents\\dev\\temp\\ddrr";
+		String remoteDirectory = "/upload";
+		sftpService.uploadFileOrDir(localDirPath, remoteDirectory);
 	}
 }
